@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Rania4363/aiops-platform.git
+    targetRevision: main
+    path: manifests/overlays/dev
+  destination: {server: https://kubernetes.default.svc, namespace: dev}
+  # Les actions directes du moteur AIOps (dev uniquement) ne doivent pas être annulées par selfHeal
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
