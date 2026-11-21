@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-app-rules
+  namespace: aiops
+  labels:
+    release: monitoring     # exigé par le sélecteur de règles de votre Prometheus
+spec:
+  groups:
+    - name: demo-app
+      rules:
+        - alert: DemoAppHighErrorRate
+          expr: |
+            sum by (namespace) (rate(demo_http_requests_total{status="500"}[2m]))
+              / clamp_min(sum by (namespace) (rate(demo_http_requests_total[2m])), 0.001) > 0.2
+          for: 1m
+          labels: {severity: critical, project: aiops, app: demo-app}
+          annotations:
+            summary: "Taux d'erreurs 5xx élevé dans {{ $labels.namespace }}"
+        - alert: DemoAppHighLatency
+          expr: |
+            histogram_quantile(0.95, sum by (le, namespace) (rate(demo_http_request_seconds_bucket[2m]))) > 1
+          for: 1m
+          labels: {severity: warning, project: aiops, app: demo-app}
+          annotations:
+            summary: "Latence p95 supérieure à 1s dans {{ $labels.namespace }}"
+        - alert: DemoAppMemoryNearLimit
+          expr: |
+            max by (namespace, pod) (container_memory_working_set_bytes{container="app", namespace=~"dev|prod"})
+              / max by (namespace, pod) (kube_pod_container_resource_limits{resource="memory", container="app", namespace=~"dev|prod"}) > 0.85
+          for: 1m
+          labels: {severity: warning, project: aiops, app: demo-app}
+          annotations:
+            summary: "Mémoire supérieure à 85% de la limite ({{ $labels.pod }})"
+        - alert: DemoAppCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace=~"dev|prod", container="app"}[5m]) > 2
+          for: 0m
+          labels: {severity: critical, project: aiops, app: demo-app}
+          annotations:
+            summary: "Redémarrages répétés ({{ $labels.pod }})"
