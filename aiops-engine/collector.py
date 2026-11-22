@@ -107,3 +107,18 @@ def collect_context(namespace: str, deployment: str) -> dict:
     ctx = collect_k8s(namespace, deployment)
     ctx["metrics"] = collect_metrics(namespace)
     return ctx
+
+
+_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def alert_firing(alertname: str, namespace: str):
+    """True si l'alerte est toujours active, False si elle a disparu, None si on ne sait pas."""
+    if not _NAME_RE.match(alertname or "") or not _NAME_RE.match(namespace or ""):
+        return None
+    try:
+        q = f'ALERTS{{alertname="{alertname}",namespace="{namespace}",alertstate="firing"}}'
+        r = httpx.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": q}, timeout=10)
+        return len(r.json()["data"]["result"]) > 0
+    except Exception:
+        return None

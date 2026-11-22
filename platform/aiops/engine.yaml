@@ -18,6 +18,8 @@ spec:
           image: ghcr.io/rania4363/aiops-engine
           ports:
             - {name: http, containerPort: 8080}
+          env:
+            - {name: AUTO_REMEDIATION, value: "true"}
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {cpu: 500m, memory: 256Mi}
