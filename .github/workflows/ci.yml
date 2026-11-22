@@ -3,23 +3,26 @@ name: ci
 on:
   push:
     branches: [main]
-    paths: ["app/**", ".github/workflows/ci.yml"]
+    paths: ["app/**", "aiops-engine/**", ".github/workflows/ci.yml"]
   pull_request:
-    paths: ["app/**"]
+    paths: ["app/**", "aiops-engine/**"]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [app, aiops-engine]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: app/requirements.txt
-      - run: pip install -r app/requirements.txt
+          cache-dependency-path: ${{ matrix.project }}/requirements.txt
+      - run: pip install -r ${{ matrix.project }}/requirements.txt
       - run: python -m pytest -q
-        working-directory: app
+        working-directory: ${{ matrix.project }}
 
   build-push:
     needs: test
@@ -28,6 +31,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      matrix:
+        include:
+          - {project: app, image: demo-app}
+          - {project: aiops-engine, image: aiops-engine}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -39,11 +47,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Nom d'image (minuscules) et tag
         run: |
-          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/demo-app" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_ENV"
           echo "TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
       - uses: docker/build-push-action@v6
         with:
-          context: app
+          context: ${{ matrix.project }}
           platforms: linux/arm64
           push: true
           tags: |
