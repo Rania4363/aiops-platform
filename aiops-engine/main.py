@@ -8,7 +8,7 @@ from fastapi import FastAPI
 log = logging.getLogger("aiops")
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="aiops-engine")
+app = FastAPI(title="aiops-engine", version="0.1")
 INCIDENTS: dict[str, dict] = {}  # en mémoire, suffisant pour la démo
 WATCHED_NAMESPACES = {"dev", "prod"}
 
