@@ -1,16 +1,44 @@
-"""Collecte compacte du contexte d'un incident (lecture seule)."""
+"""Collecte compacte du contexte d'un incident (lecture seule). Le LLM lit lentement : chaque token compte."""
 import os
+import re
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
 PROMETHEUS_URL = os.getenv(
     "PROMETHEUS_URL", "http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090")
-MAX_EVENTS = 5
-MAX_LOG_LINES = 10
+EVENT_WINDOW_MIN = 10
+MAX_EVENTS = 3
+LOG_FETCH_LINES = 50
+MAX_LOG_ENTRIES = 6
+_LOG_PREFIX = re.compile(r"^INFO:\s+\S+ - ")
 
 
 def _clip(text, n):
     return (text or "")[:n]
+
+
+def clean_logs(lines: list[str], keep: int = MAX_LOG_ENTRIES) -> list[str]:
+    """Retire healthz/metrics et les adresses, puis regroupe les lignes identiques."""
+    cleaned = [_clip(_LOG_PREFIX.sub("", ln), 100) for ln in lines
+               if "/healthz" not in ln and "/metrics" not in ln]
+    return [f"{n}x {msg}" if n > 1 else msg for msg, n in Counter(cleaned).most_common(keep)]
+
+
+def _event_time(e):
+    return e.last_timestamp or e.event_time or e.metadata.creation_timestamp
+
+
+def recent_warnings(events, now: datetime, minutes: int = EVENT_WINDOW_MIN, keep: int = MAX_EVENTS) -> list[str]:
+    """Avertissements récents seulement, un par motif (les plus récents d'abord)."""
+    out, seen = [], set()
+    for e in sorted((e for e in events if e.type == "Warning"), key=_event_time, reverse=True):
+        if _event_time(e) < now - timedelta(minutes=minutes) or e.reason in seen:
+            continue
+        seen.add(e.reason)
+        out.append(f"{e.reason}: {_clip(e.message, 90)}")
+    return out[:keep]
 
 
 def _clients():
@@ -28,11 +56,8 @@ def collect_k8s(namespace: str, deployment: str) -> dict:
     dep = apps.read_namespaced_deployment(deployment, namespace)
     c = dep.spec.template.spec.containers[0]
     limits = (c.resources.limits or {}) if c.resources else {}
-    ctx = {"deployment": {
-        "replicas": dep.spec.replicas,
-        "image_tag": c.image.rsplit(":", 1)[-1],
-        "memory_limit": limits.get("memory"),
-    }}
+    ctx = {"deployment": {"replicas": dep.spec.replicas, "image_tag": c.image.rsplit(":", 1)[-1],
+                          "memory_limit": limits.get("memory")}}
 
     pods = core.list_namespaced_pod(namespace, label_selector=f"app={deployment}").items
     ctx["pods"] = []
@@ -43,19 +68,15 @@ def collect_k8s(namespace: str, deployment: str) -> dict:
         ctx["pods"].append({"phase": p.status.phase, "restarts": cs.restart_count if cs else 0,
                             "waiting": waiting, "last_termination": last})
 
-    events = [e for e in core.list_namespaced_event(namespace).items if e.type == "Warning"]
-    events.sort(key=lambda e: e.last_timestamp or e.event_time or e.metadata.creation_timestamp,
-                reverse=True)
-    ctx["events"] = [f"{e.reason}: {_clip(e.message, 120)}" for e in events[:MAX_EVENTS]]
+    ctx["events"] = recent_warnings(core.list_namespaced_event(namespace).items, datetime.now(timezone.utc))
 
-    ctx["logs_tail"] = []
+    ctx["logs"] = []
     if pods:
         try:
-            raw = core.read_namespaced_pod_log(pods[0].metadata.name, namespace,
-                                               tail_lines=MAX_LOG_LINES)
-            ctx["logs_tail"] = [_clip(ln, 150) for ln in raw.splitlines()[-MAX_LOG_LINES:]]
+            raw = core.read_namespaced_pod_log(pods[0].metadata.name, namespace, tail_lines=LOG_FETCH_LINES)
+            ctx["logs"] = clean_logs(raw.splitlines())
         except Exception as exc:
-            ctx["logs_tail"] = [f"<logs indisponibles: {exc.__class__.__name__}>"]
+            ctx["logs"] = [f"<logs indisponibles: {exc.__class__.__name__}>"]
     return ctx
 
 

@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py collector.py ./
+COPY *.py ./
 RUN useradd -u 10001 -m app
 USER 10001
 EXPOSE 8080
