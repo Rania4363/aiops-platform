@@ -9,6 +9,7 @@ spec:
     metadata:
       labels: {app: aiops-engine}
     spec:
+      serviceAccountName: aiops-engine
       securityContext:
         runAsNonRoot: true
         seccompProfile: {type: RuntimeDefault}
