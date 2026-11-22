@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: aiops-webhook
+  namespace: dev
+spec:
+  route:
+    receiver: aiops
+    groupBy: [alertname, namespace]
+    groupWait: 10s
+    repeatInterval: 1h
+    matchers:
+      - {name: project, value: aiops}
+  receivers:
+    - name: aiops
+      webhookConfigs:
+        - url: http://aiops-engine.aiops.svc:8080/webhook/alertmanager
+          sendResolved: true
