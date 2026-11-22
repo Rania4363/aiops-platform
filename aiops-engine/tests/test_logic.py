@@ -99,3 +99,10 @@ def test_prompt_stays_small():
            "metrics": {"error_rate_5xx": 0.71, "latency_p95_s": 0.005, "memory_mb": 37.4}}
     msgs = build_messages("DemoAppHighErrorRate", "Taux d'erreurs 5xx élevé dans dev", "dev", ctx)
     assert len(msgs[1]["content"]) < 700
+
+
+def test_system_prompt_covers_all_actions_and_forbids_zero_replicas():
+    from llm import SYSTEM_PROMPT
+    for action in ("restart_deployment", "scale_deployment", "set_memory_limit", "rollback_image", "escalate"):
+        assert action in SYSTEM_PROMPT
+    assert "jamais replicas à 0" in SYSTEM_PROMPT
