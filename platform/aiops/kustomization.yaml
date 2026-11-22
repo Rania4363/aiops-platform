@@ -6,4 +6,4 @@ resources:
 images:
   - name: ghcr.io/rania4363/aiops-engine
     newName: ghcr.io/rania4363/aiops-engine
-    newTag: sha-286b57e
+    newTag: sha-58f40fc

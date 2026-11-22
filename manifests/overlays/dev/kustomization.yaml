@@ -6,7 +6,7 @@ resources:
 images:
   - name: ghcr.io/rania4363/demo-app
     newName: ghcr.io/rania4363/demo-app
-    newTag: sha-286b57e
+    newTag: sha-58f40fc
 patches:
   - target: {kind: Deployment, name: demo-app}
     patch: |-
