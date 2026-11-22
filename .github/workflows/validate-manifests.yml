@@ -1,0 +1,18 @@
+name: validate-manifests
+
+# Les PR du moteur AIOps modifient les manifests : on vérifie qu'ils se génèrent encore correctement
+on:
+  pull_request:
+    paths: ["manifests/**"]
+
+jobs:
+  kustomize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Générer chaque overlay
+        run: |
+          for d in manifests/overlays/*/; do
+            kubectl kustomize "$d" > /tmp/out.yaml
+            echo "OK $d ($(grep -c '^kind:' /tmp/out.yaml) ressources)"
+          done

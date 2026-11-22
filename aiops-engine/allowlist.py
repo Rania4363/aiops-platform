@@ -38,8 +38,7 @@ def decide(d: Diagnosis, namespace: str, deployment: str, direct_namespaces: set
         lo, hi = REPLICAS_RANGE
         if not lo <= d.replicas <= hi:
             return Decision(route="rejected", reason=f"replicas hors bornes [{lo},{hi}]")
-        route = "direct" if namespace in direct_namespaces else "pull_request"
-        return Decision(route=route, reason="scale borné")
+        return Decision(route="pull_request", reason="scale borné : changement versionné via PR")
 
     if d.action == "set_memory_limit":
         m = _MEM_RE.match(d.memory_limit)

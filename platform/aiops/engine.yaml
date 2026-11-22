@@ -20,6 +20,9 @@ spec:
             - {name: http, containerPort: 8080}
           env:
             - {name: AUTO_REMEDIATION, value: "true"}
+            - {name: AUTO_PULL_REQUEST, value: "true"}
+            - {name: GITHUB_REPO, value: "Rania4363/aiops-platform"}
+            - {name: GITHUB_TOKEN, valueFrom: {secretKeyRef: {name: aiops-secrets, key: github-token}}}
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {cpu: 500m, memory: 256Mi}

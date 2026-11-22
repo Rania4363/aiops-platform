@@ -1,4 +1,4 @@
-"""Moteur AIOps v3 : alerte -> contexte -> diagnostic LLM -> décision -> action directe bornée -> vérification."""
+"""Moteur AIOps v4 : alerte -> contexte -> diagnostic LLM -> décision -> restart direct ou Pull Request -> vérification."""
 import asyncio
 import json
 import logging
@@ -16,17 +16,20 @@ from llm import DiagnosisError, diagnose
 log = logging.getLogger("aiops")
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="aiops-engine", version="0.4")
+app = FastAPI(title="aiops-engine", version="0.5")
 INCIDENTS: dict[str, dict] = {}  # en mémoire, suffisant pour la démo
 WATCHED_NAMESPACES = {"dev", "prod"}
 DIRECT_NAMESPACES = {n for n in os.getenv("DIRECT_ACTION_NAMESPACES", "dev").split(",") if n}
-AUTO_REMEDIATION = os.getenv("AUTO_REMEDIATION", "false").lower() == "true"  # interrupteur d'arrêt
+AUTO_REMEDIATION = os.getenv("AUTO_REMEDIATION", "false").lower() == "true"  # interrupteur : actions directes
+AUTO_PULL_REQUEST = os.getenv("AUTO_PULL_REQUEST", "false").lower() == "true"  # interrupteur : création de PR
+PR_LIMIT_PER_HOUR = int(os.getenv("PR_LIMIT_PER_HOUR", "3"))
 COOLDOWN_S = int(os.getenv("COOLDOWN_S", "600"))  # une action directe par cible et par période
 VERIFY_TIMEOUT_S = float(os.getenv("VERIFY_TIMEOUT_S", "420"))
 VERIFY_INTERVAL_S = float(os.getenv("VERIFY_INTERVAL_S", "15"))
 CLOSED = {"resolved", "collect_failed", "diagnosis_failed"}
 LLM_LOCK = asyncio.Semaphore(1)  # un seul diagnostic à la fois : le LLM est lent
 LAST_ACTION: dict[tuple[str, str], float] = {}
+PR_TIMES: list[float] = []
 
 
 def _open_incident(key: str):
@@ -55,6 +58,31 @@ async def verify(incident_id: str) -> None:
         await asyncio.sleep(VERIFY_INTERVAL_S)
     _set(inc, "unresolved")
     log.warning("incident %s : alerte toujours active après vérification", incident_id)
+
+
+async def open_pr(incident_id: str, diag, ns: str, dep: str) -> None:
+    inc = INCIDENTS[incident_id]
+    if not AUTO_PULL_REQUEST:
+        _set(inc, "diagnosed")  # simulation : interrupteur coupé
+        return
+    PR_TIMES[:] = [t for t in PR_TIMES if time.time() - t < 3600]
+    if len(PR_TIMES) >= PR_LIMIT_PER_HOUR:
+        inc["decision"] = {"route": "escalate",
+                           "reason": f"limite de {PR_LIMIT_PER_HOUR} pull requests par heure atteinte"}
+        _set(inc, "escalated")
+        return
+    try:
+        _set(inc, "opening_pr")
+        PR_TIMES.append(time.time())
+        inc["pr_url"] = await asyncio.to_thread(
+            actions.open_pull_request, diag, ns, dep, incident_id, inc["alert"]["labels"].get("alertname", "?"))
+        inc["timeline"]["acted"] = time.time()
+        _set(inc, "pending_review")  # un humain valide ; l'incident se clôt quand l'alerte disparaît
+        log.info("incident %s : pull request ouverte : %s", incident_id, inc["pr_url"])
+    except Exception as exc:
+        inc["error"] = f"{exc.__class__.__name__}: {exc}"
+        _set(inc, "pr_failed")
+        log.error("incident %s : pull request échouée : %s", incident_id, inc["error"])
 
 
 async def process(incident_id: str) -> None:
@@ -96,8 +124,11 @@ async def process(incident_id: str) -> None:
     if decision.route in ("escalate", "rejected"):
         _set(inc, "escalated")
         return
-    if decision.route == "pull_request" or not AUTO_REMEDIATION:
-        _set(inc, "diagnosed")  # pull request : étape suivante ; sinon simulation (interrupteur coupé)
+    if decision.route == "pull_request":
+        await open_pr(incident_id, diag, ns, dep)
+        return
+    if not AUTO_REMEDIATION:
+        _set(inc, "diagnosed")  # simulation : interrupteur coupé
         return
 
     since = time.time() - LAST_ACTION.get((ns, dep), 0)

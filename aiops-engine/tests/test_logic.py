@@ -38,7 +38,7 @@ def test_target_outside_allowlist_rejected():
 
 
 def test_scale_bounds_and_routes():
-    assert decide(diag(action="scale_deployment", replicas=3), "dev", "demo-app", D).route == "direct"
+    assert decide(diag(action="scale_deployment", replicas=3), "dev", "demo-app", D).route == "pull_request"
     assert decide(diag(action="scale_deployment", replicas=3), "prod", "demo-app", D).route == "pull_request"
     assert decide(diag(action="scale_deployment", replicas=50), "dev", "demo-app", D).route == "rejected"
     assert decide(diag(action="scale_deployment", replicas=0), "dev", "demo-app", D).route == "rejected"
