@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Rania4363/aiops-platform.git
+    targetRevision: main
+    path: manifests/overlays/prod
+  destination: {server: https://kubernetes.default.svc, namespace: prod}
+  # Prod : pas de prune automatique, rien n'est supprimé sans décision humaine.
+  # Aucune exception d'écart : le moteur AIOps n'a aucun droit d'écriture ici.
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}
