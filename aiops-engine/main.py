@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks, FastAPI
 import actions
 from allowlist import decide
 from collector import alert_firing, collect_context
+from guard import signal_present
 from llm import DiagnosisError, diagnose
 
 log = logging.getLogger("aiops")
@@ -100,6 +101,13 @@ async def process(incident_id: str) -> None:
     except Exception as exc:
         inc["status"], inc["error"] = "collect_failed", f"{exc.__class__.__name__}: {exc}"
         log.error("incident %s : collecte échouée : %s", incident_id, inc["error"])
+        return
+
+    present, why = signal_present(labels.get("alertname", ""), ctx)
+    if not present:  # garde déterministe : pas d'appel au LLM quand tout est redevenu normal
+        inc["decision"] = {"route": "escalate", "reason": f"LLM non appelé : {why}"}
+        _set(inc, "escalated")
+        log.info("incident %s : aucun signal (%s), LLM non appelé", incident_id, why)
         return
 
     try:

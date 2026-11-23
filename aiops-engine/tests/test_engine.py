@@ -194,3 +194,19 @@ def test_resolved_closes_incident_and_allows_a_new_one():
     assert post(status="resolved") == []
     assert last()["status"] == "resolved"
     assert len(post()) == 1
+
+
+def test_no_signal_skips_llm_and_escalates(monkeypatch):
+    called = []
+
+    async def fake(*a, **k):
+        called.append(1)
+        return Diagnosis(cause="x", confidence=0.9, action="restart_deployment")
+    monkeypatch.setattr(main, "diagnose", fake)
+    monkeypatch.setattr(main, "collect_context",
+                        lambda ns, dep: {"metrics": {"error_rate_5xx": 0.0}, "pods": [], "deployment": {}})
+    post(name="DemoAppHighErrorRate")
+    inc = last()
+    assert inc["status"] == "escalated"
+    assert "LLM non appelé" in inc["decision"]["reason"]
+    assert called == []
