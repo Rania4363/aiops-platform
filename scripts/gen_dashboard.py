@@ -6,7 +6,7 @@ DS = {"type": "prometheus", "uid": "prometheus"}
 NS = 'namespace=~"$namespace"'
 
 
-def panel(pid, title, kind, x, y, w, h, exprs, unit="short", thresholds=None, desc=""):
+def panel(pid, title, kind, x, y, w, h, exprs, unit="short", thresholds=None, desc="", vmax=None):
     steps = [{"color": "green", "value": None}]
     for value, color in (thresholds or []):
         steps.append({"color": color, "value": value})
@@ -16,6 +16,8 @@ def panel(pid, title, kind, x, y, w, h, exprs, unit="short", thresholds=None, de
                      for i, (e, lg) in enumerate(exprs)],
          "fieldConfig": {"defaults": {"unit": unit, "thresholds": {"mode": "absolute", "steps": steps}},
                          "overrides": []}}
+    if vmax is not None:
+        p["fieldConfig"]["defaults"]["min"], p["fieldConfig"]["defaults"]["max"] = 0, vmax
     if kind == "timeseries":
         p["fieldConfig"]["defaults"]["custom"] = {"lineWidth": 2, "fillOpacity": 10,
                                                   "thresholdsStyle": {"mode": "line"}}
@@ -41,7 +43,7 @@ panels = [
     panel(5, "Taux d'erreurs 5xx", "timeseries", 0, 4, 12, 8,
           [(f'sum by (namespace) (rate(demo_http_requests_total{{{NS},status="500"}}[2m]))'
             f' / clamp_min(sum by (namespace) (rate(demo_http_requests_total{{{NS}}}[2m])), 0.001)', "{{namespace}}")],
-          unit="percentunit", thresholds=[(0.2, "red")], desc="Seuil d'alerte DemoAppHighErrorRate : 20 %"),
+          unit="percentunit", thresholds=[(0.2, "red")], desc="Seuil d'alerte DemoAppHighErrorRate : 20 %", vmax=1),
     panel(6, "Latence p95", "timeseries", 12, 4, 12, 8,
           [(f'histogram_quantile(0.95, sum by (le, namespace) (rate(demo_http_request_seconds_bucket{{{NS}}}[2m])))',
             "{{namespace}}")], unit="s", thresholds=[(1, "red")], desc="Seuil d'alerte DemoAppHighLatency : 1 s"),
@@ -49,7 +51,7 @@ panels = [
           [(f'max by (namespace, pod) (container_memory_working_set_bytes{{container="app",{NS}}})'
             f' / max by (namespace, pod) (kube_pod_container_resource_limits{{resource="memory",container="app",{NS}}})',
             "{{namespace}} {{pod}}")], unit="percentunit", thresholds=[(0.85, "red")],
-          desc="Seuil d'alerte DemoAppMemoryNearLimit : 85 %"),
+          desc="Seuil d'alerte DemoAppMemoryNearLimit : 85 %", vmax=1),
     panel(8, "Requêtes par code HTTP", "timeseries", 12, 12, 12, 8,
           [(f'sum by (namespace, status) (rate(demo_http_requests_total{{{NS}}}[2m]))', "{{namespace}} {{status}}")],
           unit="reqps"),
@@ -61,7 +63,8 @@ dash = {
     "time": {"from": "now-1h", "to": "now"},
     "templating": {"list": [{
         "name": "namespace", "label": "Namespace", "type": "query", "datasource": DS,
-        "query": {"query": "label_values(demo_http_requests_total, namespace)", "refId": "ns"},
+        "query": {"query": 'label_values(up{job="demo-app"}, namespace)', "refId": "ns"},
+        "allValue": "dev|prod",
         "refresh": 2, "includeAll": True, "multi": True, "current": {"text": "All", "value": "$__all"}}]},
     "panels": panels,
 }
