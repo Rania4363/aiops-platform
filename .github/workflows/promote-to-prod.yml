@@ -38,6 +38,11 @@ jobs:
             echo "Prod est déjà en ${TAG} : rien à promouvoir."
             echo "NOOP=1" >> "$GITHUB_ENV"
           fi
+      - name: Valider que l'overlay prod se génère
+        if: env.NOOP != '1'
+        run: |
+          kubectl kustomize manifests/overlays/prod > /tmp/prod.yaml
+          echo "OK overlay prod ($(grep -c '^kind:' /tmp/prod.yaml) ressources, image $(grep -m1 'image:' /tmp/prod.yaml | awk '{print $2}'))"
       - name: Ouvrir la Pull Request
         if: env.NOOP != '1'
         env:
